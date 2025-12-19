@@ -21,8 +21,8 @@ public class SyntheticDataGenerator extends PTransform<PBegin, PCollection<KV<St
 
     @Override
     public PCollection<KV<String, String>> expand(PBegin input) {
-        // 초당 1000개의 이벤트를 무한히 생성합니다.
-        return input.apply("GenerateSequence", GenerateSequence.from(0).withRate(1000, Duration.standardSeconds(1)))
+        // 초당 10000개의 이벤트를 무한히 생성합니다.
+        return input.apply("GenerateSequence", GenerateSequence.from(0).withRate(10000, Duration.standardSeconds(1)))
                 .apply("MapToSkewedKeys", org.apache.beam.sdk.transforms.ParDo.of(new DoFn<Long, KV<String, String>>() {
                     private transient Random random;
 
