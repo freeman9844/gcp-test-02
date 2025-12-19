@@ -1,0 +1,6 @@
+com/example/dataflow/transforms/SketchBasedHotKeyDetector$1.class
+com/example/dataflow/utils/SyntheticDataGenerator$1.class
+com/example/dataflow/HotKeyLoggerPipeline.class
+com/example/dataflow/transforms/SketchBasedHotKeyDetector.class
+com/example/dataflow/HotKeyLoggerPipeline$Options.class
+com/example/dataflow/utils/SyntheticDataGenerator.class

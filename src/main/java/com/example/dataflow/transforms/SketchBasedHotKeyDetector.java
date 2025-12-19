@@ -1,0 +1,78 @@
+package com.example.dataflow.transforms;
+
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.KvCoder;
+import org.apache.beam.sdk.extensions.sketching.SketchFrequencies;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Keys;
+import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.View;
+import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionView;
+import org.apache.beam.sdk.values.PDone;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * [Best Practice - Advanced] 확률적 데이터 구조(Sketching)를 이용한 Hot Key 감지
+ * 
+ * 설계 원칙 (사이드카 패턴):
+ * - 확률적 데이터 구조(CMS): 고정 메모리(Fixed Memory)로 무한한 키 공간의 빈도를 추정합니다.
+ * - 메인 로직 분리(Sidecar): Hot Key 감지 로직이 실패하거나 지연되어도 메인 데이터 처리에 지장을 주지 않습니다.
+ */
+public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String, String>>, PDone> {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SketchBasedHotKeyDetector.class);
+    private final long threshold;
+    private final double epsilon;
+    private final double confidence;
+
+    public SketchBasedHotKeyDetector(long threshold, double epsilon, double confidence) {
+        this.threshold = threshold;
+        this.epsilon = epsilon;
+        this.confidence = confidence;
+    }
+
+    @Override
+    public PDone expand(PCollection<KV<String, String>> input) {
+
+        // 1. 원본 데이터의 Coder 정보 추출 (빈도 추정 시 필요)
+        final Coder<String> keyCoder = ((KvCoder<String, String>) input.getCoder()).getKeyCoder();
+
+        // [Sidecar Branch 1] Sketch (CMS) 생성
+        // - 이 브랜치는 데이터를 요약하여 CMS 객체 하나로 압축합니다.
+        // - 없이 윈도우(non-Global Window)에서도 동작하게 하기 위해 .withoutDefaults()를 사용합니다.
+        PCollectionView<SketchFrequencies.Sketch<String>> sketchView = input
+                .apply("ExtractKeys", Keys.<String>create())
+                .apply("BuildSketch",
+                        org.apache.beam.sdk.transforms.Combine.<String, SketchFrequencies.Sketch<String>>globally(
+                                SketchFrequencies.CountMinSketchFn.<String>create(keyCoder)
+                                        .withAccuracy(epsilon, confidence))
+                                .withoutDefaults())
+                .apply("CreateSketchView", View.asSingleton());
+
+        // [Sidecar Branch 2] Sketch를 기반으로 실제 Hot Key 로깅
+        // - 메인 데이터 흐름과는 병렬로 실행되는 '모니터링' 성격의 분기입니다.
+        input.apply("MonitorHotKeys", ParDo.of(new DoFn<KV<String, String>, Void>() {
+
+            @ProcessElement
+            public void processElement(ProcessContext c) {
+                // 현재 윈도우의 요약된 Sketch 정보를 가져옵니다.
+                SketchFrequencies.Sketch<String> sketch = c.sideInput(sketchView);
+                String key = c.element().getKey();
+
+                // 해당 키의 빈도를 확률적으로 계산 (O(1) 시간 복잡도)
+                long estimatedCount = sketch.estimateCount(key, keyCoder);
+
+                if (estimatedCount >= threshold) {
+                    LOG.warn("[Sketch-Sidecar] Detected Potential HOT KEY: [{}], Estimated Count: [{}]",
+                            key, estimatedCount);
+                }
+            }
+        }).withSideInputs(sketchView));
+
+        return PDone.in(input.getPipeline());
+    }
+}
