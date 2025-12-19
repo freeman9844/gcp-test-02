@@ -41,14 +41,15 @@ public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String,
         // 1. 원본 데이터의 Coder 정보 추출 (빈도 추정 시 필요)
         final Coder<String> keyCoder = ((KvCoder<String, String>) input.getCoder()).getKeyCoder();
 
+        // 샘플링 비율 (10%)
+        final double sampleRate = 0.1;
+        final long extrapolationFactor = (long) (1.0 / sampleRate);
+
         // [Sidecar Branch 1] Sketch (CMS) 생성
-        // - [Best Practice] Combine.globally()를 사용하여 모든 키의 빈도를 하나의 Sketch로 요약합니다.
-        // - perKey() 대신 globally()를 사용하는 이유는 "Combiner Lifting(또는 Map-side combine)"
-        // 최적화를 활용하기 위함입니다.
-        // - 이 방식은 각 워커 노드에서 로컬로 Sketch를 먼저 생성(부분 집계)한 후,
-        // - 네트워크를 통해 매우 작은 크기의 Sketch 객체만 전송하므로 셔플링 부하와 Hot Key 병목을 획기적으로 줄입니다.
-        // - 윈도우 단위 처리를 위해 .withoutDefaults()를 적용했습니다.
+        // - [Best Practice] 무거운 트래픽 환경을 고려하여 10% 샘플링(Bernoulli Sampling)을 먼저 수행합니다.
+        // - 샘플링된 데이터만 Sketch에 넣음으로써 워커의 CPU/메모리 부하를 추가로 절감합니다.
         PCollectionView<SketchFrequencies.Sketch<String>> sketchView = input
+                .apply("Sample10Percent", org.apache.beam.sdk.transforms.Filter.by(e -> Math.random() < sampleRate))
                 .apply("ExtractKeys", Keys.<String>create())
                 .apply("BuildSketch",
                         org.apache.beam.sdk.transforms.Combine.<String, SketchFrequencies.Sketch<String>>globally(
@@ -58,21 +59,22 @@ public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String,
                 .apply("CreateSketchView", View.asSingleton());
 
         // [Sidecar Branch 2] Sketch를 기반으로 실제 Hot Key 로깅
-        // - 메인 데이터 흐름과는 병렬로 실행되는 '모니터링' 성격의 분기입니다.
         input.apply("MonitorHotKeys", ParDo.of(new DoFn<KV<String, String>, Void>() {
 
             @ProcessElement
             public void processElement(ProcessContext c) {
-                // 현재 윈도우의 요약된 Sketch 정보를 가져옵니다.
+                // 현재 윈도우의 요약된 '샘플링된' Sketch 정보를 가져옵니다.
                 SketchFrequencies.Sketch<String> sketch = c.sideInput(sketchView);
                 String key = c.element().getKey();
 
-                // 해당 키의 빈도를 확률적으로 계산 (O(1) 시간 복잡도)
-                long estimatedCount = sketch.estimateCount(key, keyCoder);
+                // 샘플링된 빈도를 추정하고, extrapolationFactor(10)를 곱하여 전체 빈도를 유추합니다.
+                long estimatedSampledCount = sketch.estimateCount(key, keyCoder);
+                long extrapolatedCount = estimatedSampledCount * extrapolationFactor;
 
-                if (estimatedCount >= threshold) {
-                    LOG.warn("[Sketch-Sidecar] Detected Potential HOT KEY: [{}], Estimated Count: [{}]",
-                            key, estimatedCount);
+                if (extrapolatedCount >= threshold) {
+                    LOG.warn(
+                            "[Sketch-Sampling-Sidecar] Detected Potential HOT KEY: [{}], Extrapolated Count: [{}] (Sampled: {})",
+                            key, extrapolatedCount, estimatedSampledCount);
                 }
             }
         }).withSideInputs(sketchView));
