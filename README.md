@@ -16,7 +16,8 @@ The detection logic is executed in a **separate branch** from the main business 
 - **Stability**: Load or latency in the detection logic does not impact the processing of actual business data.
 - **Flexibility**: Detection algorithms or thresholds can be modified independently without altering the main logic.
 
-### 3. Monitoring & Scalability
+### 3. Optimized Logging & Scalability
+- **Log Sampling**: The main business logic branch samples and logs processing status only every **1,000 records** to prevent log flooding while maintaining visibility.
 - **Beam Metrics Integration**: Built-in metrics for real-time monitoring:
     - `detected_hot_keys` (Counter): Tracks the total count of hot keys identified.
     - `estimated_counts_dist` (Distribution): Monitors the distribution of estimated frequencies across the window.
@@ -75,6 +76,9 @@ mvn compile exec:java \
 
 ## 🔍 Monitoring
 When running the pipeline, look for warning logs indicating potential hot keys:
-`[Sketch-Sidecar] Detected Potential HOT KEY: [hot-key-A], Estimated Count: [1465]`
+`[Sketch-Sampling-Sidecar] Detected Potential HOT KEY: [hot-key-A], Extrapolated Count: [1465] (Sampled: 146)`
+
+Additionally, monitor the main business logic sampling:
+`[Main-Business-Sample] Processed 1000 keys. Current Sample - Key: hot-key-A, Count: 482`
 
 The project is designed to integrate with Apache Beam Metrics for easy visualization in monitoring dashboards.
