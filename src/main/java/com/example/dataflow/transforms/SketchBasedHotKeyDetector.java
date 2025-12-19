@@ -29,11 +29,6 @@ public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String,
 
     private static final Logger LOG = LoggerFactory.getLogger(SketchBasedHotKeyDetector.class);
 
-    // Beam Metrics 정의
-    private final Counter hotKeyCounter = Metrics.counter(SketchBasedHotKeyDetector.class, "detected_hot_keys");
-    private final Distribution countDistribution = Metrics.distribution(SketchBasedHotKeyDetector.class,
-            "estimated_counts_dist");
-
     private final long threshold;
     private final double epsilon;
     private final double confidence;
@@ -50,13 +45,13 @@ public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String,
         // 1. 원본 데이터의 Coder 정보 추출 (빈도 추정 시 필요)
         final Coder<String> keyCoder = ((KvCoder<String, String>) input.getCoder()).getKeyCoder();
 
-        // 샘플링 비율 (10%)
-        final double sampleRate = 0.1;
-        final long extrapolationFactor = (long) (1.0 / sampleRate);
+        // 샘플링 비율 (10%): Sample.any(10) = 10 out of every 100
+        final long extrapolationFactor = 10;
 
         // [Sidecar Branch 1] Sketch (CMS) 생성
         PCollectionView<SketchFrequencies.Sketch<String>> sketchView = input
-                .apply("Sample10Percent", org.apache.beam.sdk.transforms.Filter.by(e -> Math.random() < sampleRate))
+                // [Best Practice] Use Sample.any() for deterministic sampling
+                .apply("Sample10Percent", org.apache.beam.sdk.transforms.Sample.any(10))
                 .apply("ExtractKeys", Keys.<String>create())
                 .apply("BuildSketch",
                         org.apache.beam.sdk.transforms.Combine.<String, SketchFrequencies.Sketch<String>>globally(
@@ -69,6 +64,11 @@ public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String,
 
         // [Sidecar Branch 2] Sketch를 기반으로 실제 Hot Key 로깅
         input.apply("MonitorHotKeys", ParDo.of(new DoFn<KV<String, String>, Void>() {
+
+            // [Best Practice] Define metrics INSIDE DoFn, not in PTransform
+            private final Counter hotKeyCounter = Metrics.counter(SketchBasedHotKeyDetector.class, "detected_hot_keys");
+            private final Distribution countDistribution = Metrics.distribution(SketchBasedHotKeyDetector.class,
+                    "estimated_counts_dist");
 
             @ProcessElement
             public void processElement(ProcessContext c) {
