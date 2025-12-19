@@ -42,8 +42,12 @@ public class SketchBasedHotKeyDetector extends PTransform<PCollection<KV<String,
         final Coder<String> keyCoder = ((KvCoder<String, String>) input.getCoder()).getKeyCoder();
 
         // [Sidecar Branch 1] Sketch (CMS) 생성
-        // - 이 브랜치는 데이터를 요약하여 CMS 객체 하나로 압축합니다.
-        // - 없이 윈도우(non-Global Window)에서도 동작하게 하기 위해 .withoutDefaults()를 사용합니다.
+        // - [Best Practice] Combine.globally()를 사용하여 모든 키의 빈도를 하나의 Sketch로 요약합니다.
+        // - perKey() 대신 globally()를 사용하는 이유는 "Combiner Lifting(또는 Map-side combine)"
+        // 최적화를 활용하기 위함입니다.
+        // - 이 방식은 각 워커 노드에서 로컬로 Sketch를 먼저 생성(부분 집계)한 후,
+        // - 네트워크를 통해 매우 작은 크기의 Sketch 객체만 전송하므로 셔플링 부하와 Hot Key 병목을 획기적으로 줄입니다.
+        // - 윈도우 단위 처리를 위해 .withoutDefaults()를 적용했습니다.
         PCollectionView<SketchFrequencies.Sketch<String>> sketchView = input
                 .apply("ExtractKeys", Keys.<String>create())
                 .apply("BuildSketch",

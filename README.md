@@ -8,6 +8,7 @@ This project demonstrates an efficient approach to detecting and logging **Hot K
 In high-volume traffic environments, aggregating frequencies for millions of unique keys can lead to Out of Memory (OOM) errors. This project utilizes the **Count-Min Sketch** algorithm to provide:
 - **Fixed Memory Footprint**: Occupies a constant amount of memory regardless of the volume of data or the number of unique keys.
 - **Probabilistic Estimation**: Trading absolute accuracy for extreme efficiency, allowing for near real-time frequency estimation.
+- **Combiner Lifting (Optimization)**: Utilizes `globally()` aggregation to enable Map-side combining. This ensures each worker performs local partial aggregation, dramatically reducing network shuffle and avoiding Hot Key bottlenecks at the data transfer level.
 
 ### 2. Sidecar Pattern
 The detection logic is executed in a **separate branch** from the main business logic pipeline.
