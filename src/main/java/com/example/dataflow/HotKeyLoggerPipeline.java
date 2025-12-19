@@ -34,10 +34,15 @@ public class HotKeyLoggerPipeline {
         Long getHotKeyThreshold();
 
         void setHotKeyThreshold(Long value);
+
     }
 
     public static void main(String[] args) {
         Options options = PipelineOptionsFactory.fromArgs(args).withValidation().as(Options.class);
+
+        // [New] Dataflow Streaming Engine 명시적 활성화
+        options.setEnableStreamingEngine(true);
+
         Pipeline p = Pipeline.create(options);
 
         // 1. 가상 데이터 생성 (Skewed Data)
