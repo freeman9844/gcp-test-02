@@ -16,6 +16,12 @@ The detection logic is executed in a **separate branch** from the main business 
 - **Stability**: Load or latency in the detection logic does not impact the processing of actual business data.
 - **Flexibility**: Detection algorithms or thresholds can be modified independently without altering the main logic.
 
+### 3. Monitoring & Scalability
+- **Beam Metrics Integration**: Built-in metrics for real-time monitoring:
+    - `detected_hot_keys` (Counter): Tracks the total count of hot keys identified.
+    - `estimated_counts_dist` (Distribution): Monitors the distribution of estimated frequencies across the window.
+- **Dataflow Streaming Engine**: Explicitly enabled to offload state management and improve autoscaling performance on Google Cloud.
+
 ## 🏗 Architecture Overview
 
 ```mermaid
