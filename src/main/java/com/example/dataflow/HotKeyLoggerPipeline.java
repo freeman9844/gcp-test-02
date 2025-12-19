@@ -7,11 +7,15 @@ import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.joda.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * [Main Entry Point] Hot Key 로깅 샘플 파이프라인 (확률적 스케칭 기반)
@@ -21,6 +25,8 @@ import org.joda.time.Duration;
  * - 메모리 최적화: 키의 양에 상관없이 고정된 메모리 부하로 Hot Key를 감지합니다.
  */
 public class HotKeyLoggerPipeline {
+
+    private static final Logger LOG = LoggerFactory.getLogger(HotKeyLoggerPipeline.class);
 
     public interface Options extends DataflowPipelineOptions {
         @Description("윈도우 지속 시간 (초)")
@@ -53,7 +59,22 @@ public class HotKeyLoggerPipeline {
                 Window.into(FixedWindows.of(Duration.standardSeconds(options.getWindowDurationSeconds()))));
 
         /*
-         * 3. 확률적 Hot Key 감지 (Sketching Sidecar)
+         * 3. 메인 비즈니스 로직 (Main Branch)
+         * - 예시: 윈도우별 키 카운트 합계 계산
+         */
+        windowedData
+                .apply("MainBusinessLogic_CountKeys", org.apache.beam.sdk.transforms.Count.perKey())
+                .apply("LogFinalCounts", ParDo.of(new DoFn<KV<String, Long>, Void>() {
+                    @ProcessElement
+                    public void processElement(ProcessContext c) {
+                        // 실제 비즈니스 로직 수행 (예: DB 저장, 하위 시스템 전송 등)
+                        // 여기서는 로깅으로 대체
+                        LOG.info("[Main-Business] Key: {}, Count: {}", c.element().getKey(), c.element().getValue());
+                    }
+                }));
+
+        /*
+         * 4. 확률적 Hot Key 감지 (Sketching Sidecar Branch)
          * - 정확한 합산 대신 확률적 추정을 사용하여 메모리 효율성을 극대화합니다.
          * - 사이드카 패턴으로 구현되어 메인 파이프라인과 독립적으로 동작합니다.
          */
