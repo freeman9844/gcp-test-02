@@ -64,12 +64,17 @@ public class HotKeyLoggerPipeline {
          */
         windowedData
                 .apply("MainBusinessLogic_CountKeys", org.apache.beam.sdk.transforms.Count.perKey())
-                .apply("LogFinalCounts", ParDo.of(new DoFn<KV<String, Long>, Void>() {
+                .apply("LogSampledCounts", ParDo.of(new DoFn<KV<String, Long>, Void>() {
+                    private long elementCount = 0;
+
                     @ProcessElement
                     public void processElement(ProcessContext c) {
                         // 실제 비즈니스 로직 수행 (예: DB 저장, 하위 시스템 전송 등)
-                        // 여기서는 로깅으로 대체
-                        LOG.info("[Main-Business] Key: {}, Count: {}", c.element().getKey(), c.element().getValue());
+                        // 여기서는 1,000건마다 샘플 로깅
+                        if (++elementCount % 1000 == 0) {
+                            LOG.info("[Main-Business-Sample] Processed {} keys. Current Sample - Key: {}, Count: {}",
+                                    elementCount, c.element().getKey(), c.element().getValue());
+                        }
                     }
                 }));
 
