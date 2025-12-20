@@ -1,3 +1,5 @@
+[English](README.md) | [한국어](README.ko.md)
+
 # Dataflow Probabilistic Hot Key Logger
 
 This project demonstrates an efficient approach to detecting and logging **Hot Keys** (keys with abnormally high frequencies) in streaming data using Google Cloud Dataflow (Apache Beam).

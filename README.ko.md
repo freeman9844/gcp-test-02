@@ -1,3 +1,5 @@
+[English](README.md) | [한국어](README.ko.md)
+
 # Dataflow 확률적 Hot Key 로거
 
 이 프로젝트는 Google Cloud Dataflow(Apache Beam)를 사용하여 스트리밍 데이터에서 **Hot Key**(비정상적으로 높은 빈도를 가진 키)를 효율적으로 감지하고 로깅하는 방법을 보여줍니다.
